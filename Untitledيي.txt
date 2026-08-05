@@ -1,0 +1,126 @@
+
+outputs/swing_compass_intraday_sc_v77_i.pine
+Full file content failed to load
+work/test_sc_v77_dual_editions.py
+    if seconds <= 7 * 24 * 60 * 60:
+        return 1.40, 6.00
+    if seconds <= 31 * 24 * 60 * 60:
+        return 1.70, 7.00
+    return 2.00, 8.00
+
+
+def assert_common(source: str, short_title: str) -> None:
+    assert source.count("//@version=6") == 1
+    assert source.count("indicator(") == 1
+    assert source.count("request.security(") == 3
+    assert source.count("request.security_lower_tf(") == 0
+    assert source.count("alertcondition(") == 7
+    assert source.count("table.new(") == 1
+    require(source, f'"{short_title}"', "edition short title")
+    require(source, "table.new(position.top_right, 2, 5", "compact 2x5 dashboard")
+    require(source, 'array.from("الاتجاه", "الفرصة", "التأكيد", "السياق")', "four essential rows")
+    require(source, "table.clear(dashboard", "dashboard clear")
+    require(source, "f_nearest_stored_pivot", "historical pivot ladder")
+    require(source, "float activeRetestTolerance = nz(", "fresh event tolerance")
+    require(source, "int channelReturnWindowBars = fakeoutWindow", "unified quick fakeout window")
+    require(source, "sweepUpperWickShare <= 0.25", "bull break wick filter")
+    require(source, "sweepLowerWickShare <= 0.25", "bear break wick filter")
+    require(source, "bodyRatio >= 0.40", "break body filter")
+    require(source, "not candidate.needsQualifiers or volumePass" if short_title.endswith("-I") else "not setupCandidateState.needsQualifiers or volumePass", "break volume filter")
+    require(source, "fibObjective1", "Fib extension target")
+    require(source, "retracementTargetLevel", "Fib retracement target")
+    require(source, "bullishChannelMeasuredTarget", "secondary channel measured target")
+    require(source, "bullishMajorChannelTarget", "major channel measured target")
+    require(source, "float fallbackTarget2Distance", "T2 monotonic fallback")
+    require(source, "float fallbackTarget3Distance", "T3 monotonic fallback")
+    require(source, "float tickRoundedCandidate", "tick-rounded trailing stop")
+    require(source, "target1HitBar == bar_index or target2HitBar == bar_index or target3HitBar == bar_index", "all target alerts")
+    require(source, "stockChartAllowed and barstate.isconfirmed and (bullishBreakFailed", "stock-only confirmed fakeout alert")
+    require(source, "closedHigherTrendBias := higherWeightedScore > 0", "pure confirmed HTF dashboard snapshot")
+    require(source, "priorDown[rangeBars + 1]" if short_title.endswith("-I") else "precedingDownContext[sidewaysRangeBars + 1]", "pre-range trend context")
+    reject(source, "var bool", "unchecked bool marker") if False else None
+    reject(source, "var bool x = na", "boolean na placeholder")
+    reject(source, "riskText", "dashboard prices")
+    reject(source, "SC-V74", "stale dashboard version")
+    reject(source, " ", "replacement character")
+
+    # HTF lookahead is safe only because the helper returns closed [1] state.
+    assert source.count("lookahead = barmerge.lookahead_on") == 3
+    require(source, "f_closed_htf_state()", "closed HTF helper")
+
+    # Structural obstacles alone may override T1; lower-tier Fib/MA/candles remain
+    # in the ranked ladder rather than silently jumping the explicit priority.
+    hard_obstacle_line = next(line for line in source.splitlines() if "float nearestHardObstacle" in line)
+    assert "historicalPivotObstacle" in hard_obstacle_line
+    assert "horizontalObstacleLevel" in hard_obstacle_line
+    assert "ChannelBoundaryTarget" in hard_obstacle_line
+    assert "fibObstacleLevel" not in hard_obstacle_line
+    assert "AverageObstacle" not in hard_obstacle_line
+    assert "targetCandleLevel" not in hard_obstacle_line
+
+
+def test_intraday() -> None:
+    source = INTRADAY.read_text(encoding="utf-8")
+    assert_common(source, "SC-V77-I")
+    require(source, "timeframe.isintraday and chartSeconds >= 60 and chartSeconds < maximumSupportedSeconds", "1m to below daily support")
+    require(source, "float horizonFactor = chartSeconds <= 60 ? 1.00", "granular target horizon")
+    require(source, "f_stop_atr_limits(chartSeconds)", "granular stop horizon")
+    require(source, "array.from(fibObjective1, retracementTargetLevel)", "retracement plus extension")
+    require(source, "array.from(historicalPivotObstacle, horizontalObstacleLevel, opposingZoneBoundary, targetWyckoffLevel, minorChannelBoundaryTarget, majorChannelBoundaryTarget)", "structural hard obstacles")
+
+    cases = {
+        60: (1.00, (0.60, 2.50)),
+        5 * 60: (1.05, (0.65, 2.75)),
+        15 * 60: (1.15, (0.75, 3.00)),
+        30 * 60: (1.25, (0.85, 3.25)),
+        60 * 60: (1.35, (1.00, 3.75)),
+        4 * 60 * 60: (1.55, (1.15, 4.50)),
+        6 * 60 * 60: (1.75, (1.30, 5.25)),
+    }
+    for seconds, (expected_horizon, expected_stop) in cases.items():
+        assert horizon_intraday(seconds) == expected_horizon
+        assert stop_limits_intraday(seconds) == expected_stop
+
+
+def test_daily() -> None:
+    source = DAILY.read_text(encoding="utf-8")
+    assert_common(source, "SC-V77-D")
+    require(source, "chartSeconds >= minimumSupportedSeconds and chartSeconds <= maximumSupportedSeconds", "daily to 3M support")
+    require(source, "? 1.30 : chartSeconds <= 7 * 24 * 60 * 60 ? 1.75", "daily/weekly horizon")
+    require(source, "? 1.15 : chartSeconds <= 7 * 24 * 60 * 60 ? 1.40", "daily/weekly stop floor")
+    require(source, "fibObjective1, retracementTargetLevel", "retracement plus extension")
+    require(source, "historicalPivotObstacle, horizontalObstacleLevel, opposingZoneBoundary, targetWyckoffLevel, primaryChannelBoundaryTarget, secondaryChannelBoundaryTarget, na, na, na, na", "structural hard obstacles")
+
+    cases = {
+        24 * 60 * 60: (1.30, (1.15, 5.00)),
+        7 * 24 * 60 * 60: (1.75, (1.40, 6.00)),
+        30 * 24 * 60 * 60: (2.20, (1.70, 7.00)),
+        90 * 24 * 60 * 60: (2.60, (2.00, 8.00)),
+    }
+    for seconds, (expected_horizon, expected_stop) in cases.items():
+        assert horizon_daily(seconds) == expected_horizon
+        assert stop_limits_daily(seconds) == expected_stop
+
+
+def test_monotonic_target_geometry() -> None:
+    # The fallback geometry used when no ranked T2/T3 exists must keep direction.
+    for is_long in (True, False):
+        entry = 100.0
+        risk = 2.0
+        horizon = 1.75
+        rr1, rr2, rr3 = 1.0, 2.0, 3.0
+        d1 = risk * max(rr1 * horizon, 1.0)
+        d2 = risk * max(rr2 * horizon, max(rr1 * horizon, 1.0) + 0.75)
+        d3 = risk * max(rr3 * horizon, max(rr2 * horizon, max(rr1 * horizon, 1.0) + 0.75) + 1.0)
+        targets = [entry + d1, entry + d2, entry + d3] if is_long else [entry - d1, entry - d2, entry - d3]
+        if is_long:
+            assert entry < targets[0] < targets[1] < targets[2]
+        else:
+            assert entry > targets[0] > targets[1] > targets[2]
+
+
+if __name__ == "__main__":
+    test_intraday()
+    test_daily()
+    test_monotonic_target_geometry()
+    print("SC-V77 dual-edition static/logic checks: PASS")

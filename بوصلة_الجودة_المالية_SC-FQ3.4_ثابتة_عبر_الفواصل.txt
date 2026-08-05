@@ -1,0 +1,256 @@
+//@version=6
+indicator("جودة مالية ثابتة عبر الفواصل", "SC-FQ", overlay = true, max_bars_back = 500, dynamic_requests = true)
+
+string profileInput = input.string("اختر القطاع", "نوع الشركة", options = ["اختر القطاع", "عام", "بنوك", "تأمين"])
+bool showTable = input.bool(true, "إظهار النظرة المالية")
+string tableLocationInput = input.string("أسفل يمين", "مكان النظرة", options = ["أسفل يمين", "أسفل يسار", "أعلى يمين"])
+string tablePosition = tableLocationInput == "أسفل يسار" ? position.bottom_left : tableLocationInput == "أعلى يمين" ? position.top_right : position.bottom_right
+string tableTextSize = size.tiny
+
+bool stockAllowed = syminfo.type == "stock"
+float chartTimeframeSeconds = timeframe.in_seconds()
+float maximumSupportedSeconds = timeframe.in_seconds("1M")
+bool supportedChartTimeframe = not na(chartTimeframeSeconds) and chartTimeframeSeconds <= maximumSupportedSeconds
+bool profileSelected = profileInput != "اختر القطاع"
+bool bank = profileInput == "بنوك"
+bool insurance = profileInput == "تأمين"
+bool general = profileInput == "عام"
+bool specialized = bank or insurance
+
+string chartIndustry = na(syminfo.industry) ? "" : str.lower(syminfo.industry)
+bool inferredBank = str.contains(chartIndustry, "bank") or str.contains(chartIndustry, "banks")
+bool inferredInsurance = str.contains(chartIndustry, "insurance")
+bool inferredFinancialSpecialized = inferredBank or inferredInsurance
+bool industryKnown = chartIndustry != ""
+bool profileMismatch = stockAllowed and profileSelected and industryKnown and ((bank and not inferredBank) or (insurance and not inferredInsurance) or (general and inferredFinancialSpecialized))
+bool scoreAllowed = stockAllowed and supportedChartTimeframe and profileSelected and not profileMismatch
+
+f_fin(string id, string period) =>
+    request.financial(syminfo.tickerid, id, period, gaps = barmerge.gaps_off, ignore_invalid_symbol = true)
+
+f_fin_event(string id, string period) =>
+    request.financial(syminfo.tickerid, id, period, gaps = barmerge.gaps_on, ignore_invalid_symbol = true)
+
+f_pct(float value) =>
+    na(value) ? "—" : str.tostring(value * 100.0, "#.0") + "%"
+
+f_num(float value) =>
+    na(value) ? "—" : str.tostring(value, "#.##")
+
+f_clamp(float value, float minimum, float maximum) =>
+    math.min(maximum, math.max(minimum, value))
+
+// TradingView exposes ROE/ROIC as percentage fields (e.g. 15 = 15%).
+// Convert them once to decimal ratios for the scoring thresholds below.
+f_ratio_value(float value) =>
+    na(value) ? na : value / 100.0
+
+f_average2(float first, float second) =>
+    int available = (na(first) ? 0 : 1) + (na(second) ? 0 : 1)
+    available == 0 ? na : (nz(first) + nz(second)) / available
+
+f_average3(float first, float second, float third) =>
+    int available = (na(first) ? 0 : 1) + (na(second) ? 0 : 1) + (na(third) ? 0 : 1)
+    available == 0 ? na : (nz(first) + nz(second) + nz(third)) / available
+
+f_plain_level(float value) =>
+    na(value) ? "غير متاح" : value >= 70 ? "جيد" : value >= 40 ? "متوسط" : "ضعيف"
+
+f_valuation_level(float value) =>
+    na(value) ? "غير متاح" : value >= 70 ? "جذاب" : value >= 40 ? "مقبول" : "مرتفع"
+
+f_positive_score(float value, float bad, float good) =>
+    na(value) ? na : 100.0 * f_clamp((value - bad) / math.max(good - bad, 0.000001), 0.0, 1.0)
+
+f_inverse_score(float value, float good, float bad) =>
+    na(value) ? na : 100.0 * f_clamp((bad - value) / math.max(bad - good, 0.000001), 0.0, 1.0)
+
+f_signed_growth(float currentValue, float priorValue) =>
+    na(currentValue) or na(priorValue) or math.abs(priorValue) <= 0.000001 or priorValue < 0 and currentValue >= 0 ? na : priorValue > 0 ? currentValue / priorValue - 1.0 : (currentValue - priorValue) / math.abs(priorValue)
+
+f_add(float weightedSum, float weightSum, float metricScore, float weight) =>
+    [weightedSum + (na(metricScore) ? 0.0 : metricScore * weight), weightSum + (na(metricScore) ? 0.0 : weight)]
+
+// Reconstruct financial history inside one canonical monthly context. Doing it
+// on chart bars made the result depend on the chart TF: 500 one-minute bars do
+// not contain the same fiscal events as 500 monthly bars. Monthly execution is
+// canonical for every supported chart TF from one minute through one month.
+f_canonical_history_snapshot() =>
+    float revenueFyEvent = f_fin_event("TOTAL_REVENUE", "FY")
+    float dilutedEpsFyEvent = f_fin_event("EARNINGS_PER_SHARE_DILUTED", "FY")
+    float dilutedSharesFyEvent = f_fin_event("DILUTED_SHARES_OUTSTANDING", "FY")
+    float equityFqEvent = f_fin_event("TOTAL_EQUITY", "FQ")
+    float latestRevenue = ta.valuewhen(not na(revenueFyEvent), revenueFyEvent, 0)
+    float priorRevenue = ta.valuewhen(not na(revenueFyEvent), revenueFyEvent, 1)
+    float olderRevenue = ta.valuewhen(not na(revenueFyEvent), revenueFyEvent, 2)
+    float oldestRevenue = ta.valuewhen(not na(revenueFyEvent), revenueFyEvent, 3)
+    float latestEps = ta.valuewhen(not na(dilutedEpsFyEvent), dilutedEpsFyEvent, 0)
+    float priorEps = ta.valuewhen(not na(dilutedEpsFyEvent), dilutedEpsFyEvent, 1)
+    float olderEps = ta.valuewhen(not na(dilutedEpsFyEvent), dilutedEpsFyEvent, 2)
+    float oldestEps = ta.valuewhen(not na(dilutedEpsFyEvent), dilutedEpsFyEvent, 3)
+    float latestShares = ta.valuewhen(not na(dilutedSharesFyEvent), dilutedSharesFyEvent, 0)
+    float priorShares = ta.valuewhen(not na(dilutedSharesFyEvent), dilutedSharesFyEvent, 1)
+    float latestEquity = ta.valuewhen(not na(equityFqEvent), equityFqEvent, 0)
+    float priorEquityValue = ta.valuewhen(not na(equityFqEvent), equityFqEvent, 1)
+    [latestRevenue, priorRevenue, olderRevenue, oldestRevenue, latestEps, priorEps, olderEps, oldestEps, latestShares, priorShares, latestEquity, priorEquityValue]
+
+[latestRevenueFy, priorRevenueFy, olderRevenueFy, oldestRevenueFy, latestDilutedEpsFy, priorDilutedEpsFy, olderDilutedEpsFy, oldestDilutedEpsFy, latestSharesFy, priorSharesFy, totalEquity, priorEquity] = request.security(syminfo.tickerid, "1M", f_canonical_history_snapshot(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off, ignore_invalid_symbol = true, calc_bars_count = 72)
+
+float totalRevenue = f_fin("TOTAL_REVENUE", "TTM")
+float operatingIncome = f_fin("OPER_INCOME", "TTM")
+float netIncome = f_fin("NET_INCOME", "TTM")
+float operatingCash = f_fin("CASH_F_OPERATING_ACTIVITIES", "TTM")
+float freeCash = f_fin("FREE_CASH_FLOW", "TTM")
+float totalAssets = f_fin("TOTAL_ASSETS", "FQ")
+float currentAssets = f_fin("TOTAL_CURRENT_ASSETS", "FQ")
+float currentLiabilities = f_fin("TOTAL_CURRENT_LIABILITIES", "FQ")
+float totalDebt = f_fin("TOTAL_DEBT", "FQ")
+float roeReported = f_ratio_value(f_fin("RETURN_ON_EQUITY", "FY"))
+float roicReported = f_ratio_value(f_fin("RETURN_ON_INVESTED_CAPITAL", "FY"))
+float piotroski = f_fin("PIOTROSKI_F_SCORE", "FY")
+float altman = f_fin("ALTMAN_Z_SCORE", "FY")
+float beneish = f_fin("BENEISH_M_SCORE", "FY")
+float dilutedEpsTtm = f_fin("EARNINGS_PER_SHARE_DILUTED", "TTM")
+float bookValuePerShare = f_fin("BOOK_VALUE_PER_SHARE", "FQ")
+// Valuation is deliberately separated from business quality. Use one monthly
+// context for the current market price so every supported chart TF sees the
+// same reference. Price can still move with the market; the quality score does
+// not include valuation and therefore does not move with price.
+float valuationReferencePrice = request.security(syminfo.tickerid, "1M", close, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off, ignore_invalid_symbol = true, calc_bars_count = 3)
+float pe = not na(dilutedEpsTtm) and dilutedEpsTtm > 0 and not na(valuationReferencePrice) ? valuationReferencePrice / dilutedEpsTtm : na
+float pb = not na(bookValuePerShare) and bookValuePerShare > 0 and not na(valuationReferencePrice) ? valuationReferencePrice / bookValuePerShare : na
+
+float averageEquity = not na(totalEquity) and not na(priorEquity) ? (totalEquity + priorEquity) * 0.5 : totalEquity
+float roe = not na(roeReported) ? roeReported : not na(netIncome) and not na(averageEquity) and averageEquity != 0 ? netIncome / averageEquity : na
+float roic = roicReported
+float operatingMargin = not na(operatingIncome) and not na(totalRevenue) and totalRevenue != 0 ? operatingIncome / totalRevenue : na
+float fcfMargin = not na(freeCash) and not na(totalRevenue) and totalRevenue > 0 ? freeCash / totalRevenue : na
+// Growth averages up to three completed FY-to-FY intervals.
+// This avoids mixing rolling TTM values with fiscal-year denominators.
+float latestRevenueGrowth = not na(latestRevenueFy) and not na(priorRevenueFy) and priorRevenueFy != 0 ? latestRevenueFy / priorRevenueFy - 1.0 : na
+float priorRevenueGrowth = not na(priorRevenueFy) and not na(olderRevenueFy) and olderRevenueFy != 0 ? priorRevenueFy / olderRevenueFy - 1.0 : na
+float olderRevenueGrowth = not na(olderRevenueFy) and not na(oldestRevenueFy) and oldestRevenueFy != 0 ? olderRevenueFy / oldestRevenueFy - 1.0 : na
+float revenueGrowth = f_average3(latestRevenueGrowth, priorRevenueGrowth, olderRevenueGrowth)
+float latestEpsGrowth = f_signed_growth(latestDilutedEpsFy, priorDilutedEpsFy)
+float priorEpsGrowth = f_signed_growth(priorDilutedEpsFy, olderDilutedEpsFy)
+float olderEpsGrowth = f_signed_growth(olderDilutedEpsFy, oldestDilutedEpsFy)
+float epsGrowth = f_average3(latestEpsGrowth, priorEpsGrowth, olderEpsGrowth)
+bool epsTurnaround = not na(latestDilutedEpsFy) and not na(priorDilutedEpsFy) and priorDilutedEpsFy < 0 and latestDilutedEpsFy >= 0
+bool lossWithPositiveOperatingCash = not na(netIncome) and netIncome < 0 and not na(operatingCash) and operatingCash > 0
+float cashConversion = not na(operatingCash) and not na(netIncome) and netIncome > 0.000001 ? operatingCash / netIncome : na
+float debtToEquity = not na(totalDebt) and not na(totalEquity) and totalEquity > 0 ? totalDebt / totalEquity : na
+float currentRatio = not na(currentAssets) and not na(currentLiabilities) and currentLiabilities > 0 ? currentAssets / currentLiabilities : na
+float shareGrowth = not na(latestSharesFy) and not na(priorSharesFy) and priorSharesFy > 0 ? latestSharesFy / priorSharesFy - 1.0 : na
+
+float profitabilityScore = f_positive_score(roe, 0.00, bank ? 0.16 : insurance ? 0.18 : 0.22)
+float returnCapitalScore = f_positive_score(roic, 0.00, 0.18)
+float marginScore = f_positive_score(operatingMargin, 0.00, specialized ? 0.16 : 0.25)
+float growthScore = f_positive_score(revenueGrowth, -0.05, 0.20)
+// A completed loss-to-profit transition is economically meaningful even though
+// a conventional signed growth rate is undefined across zero.
+float epsGrowthScore = epsTurnaround ? (not na(operatingCash) and operatingCash > 0 ? 70.0 : 55.0) : f_positive_score(epsGrowth, -0.10, 0.25)
+float cashScore = f_positive_score(cashConversion, 0.50, 1.20)
+float fcfScore = f_positive_score(fcfMargin, -0.02, 0.12)
+float leverageScore = bank ? na : f_inverse_score(debtToEquity, 0.30, insurance ? 2.50 : 2.00)
+float liquidityScore = bank ? na : f_positive_score(currentRatio, 0.70, 2.00)
+float shareScore = f_inverse_score(shareGrowth, -0.02, 0.10)
+float piotroskiScore = f_positive_score(piotroski, 3.0, 8.0)
+float altmanScore = specialized ? na : f_positive_score(altman, 1.0, 3.0)
+float beneishScore = f_inverse_score(beneish, -2.50, -1.20)
+float valuationScore = na(pe) or pe <= 0 ? na : f_inverse_score(pe, 10.0, 35.0)
+float priceBookScore = na(pb) or pb <= 0 ? na : f_inverse_score(pb, bank ? 1.0 : 1.2, bank ? 3.0 : 5.0)
+
+// Pine tuples declare new identifiers; they cannot reassign an existing tuple.
+// A staged immutable accumulator keeps the score compile-safe and auditable.
+[weightedSum01, weightSum01] = f_add(0.0, 0.0, profitabilityScore, 14.0)
+[weightedSum02, weightSum02] = f_add(weightedSum01, weightSum01, returnCapitalScore, specialized ? 0.0 : 10.0)
+[weightedSum03, weightSum03] = f_add(weightedSum02, weightSum02, marginScore, specialized ? 6.0 : 9.0)
+[weightedSum04, weightSum04] = f_add(weightedSum03, weightSum03, growthScore, 8.0)
+[weightedSum05, weightSum05] = f_add(weightedSum04, weightSum04, epsGrowthScore, 8.0)
+[weightedSum06, weightSum06] = f_add(weightedSum05, weightSum05, cashScore, specialized ? 5.0 : 10.0)
+[weightedSum07, weightSum07] = f_add(weightedSum06, weightSum06, fcfScore, specialized ? 4.0 : 8.0)
+[weightedSum08, weightSum08] = f_add(weightedSum07, weightSum07, leverageScore, 8.0)
+[weightedSum09, weightSum09] = f_add(weightedSum08, weightSum08, liquidityScore, 5.0)
+[weightedSum10, weightSum10] = f_add(weightedSum09, weightSum09, shareScore, 5.0)
+[weightedSum11, weightSum11] = f_add(weightedSum10, weightSum10, piotroskiScore, 6.0)
+[weightedSum12, weightSum12] = f_add(weightedSum11, weightSum11, altmanScore, 4.0)
+[weightedSum13, weightSum13] = f_add(weightedSum12, weightSum12, beneishScore, 3.0)
+float weightedSum = weightedSum13
+float weightSum = weightSum13
+
+// Completeness is measured against metrics applicable to the selected profile.
+// Intentionally disabled bank/insurance ratios are not counted as missing data.
+float maximumApplicableWeight = bank ? 59.0 : insurance ? 72.0 : 98.0
+float completeness = 100.0 * weightSum / maximumApplicableWeight
+float rawScore = weightSum > 0 ? weightedSum / weightSum : na
+float coverageFactor = f_clamp(completeness / 75.0, 0.0, 1.0)
+float coverageAdjustedScore = na(rawScore) ? na : rawScore * (0.70 + 0.30 * coverageFactor)
+
+// Penalize independent risk axes instead of counting several symptoms of the
+// same cash-flow or solvency weakness multiple times.
+bool profitabilityRiskFlag = not na(netIncome) and netIncome < 0
+bool cashGenerationRiskFlag = not na(operatingCash) and operatingCash < 0 or not na(freeCash) and freeCash < 0 or not na(cashConversion) and cashConversion < 0.50
+bool dilutionRiskFlag = not na(shareGrowth) and shareGrowth > 0.08
+bool solvencyRiskFlag = not specialized and (not na(debtToEquity) and debtToEquity > 2.0 or not na(altman) and altman < 1.0)
+bool reportingRiskFlag = not na(beneish) and beneish > -1.20
+int redFlags = (profitabilityRiskFlag ? 1 : 0) + (cashGenerationRiskFlag ? 1 : 0) + (dilutionRiskFlag ? 1 : 0) + (solvencyRiskFlag ? 1 : 0) + (reportingRiskFlag ? 1 : 0)
+float redFlagPenalty = math.min(redFlags, 4) * 6.0
+float score = scoreAllowed and not na(coverageAdjustedScore) ? math.max(0.0, coverageAdjustedScore - redFlagPenalty) : na
+
+string grade = not stockAllowed ? "غير مدعوم" : not supportedChartTimeframe ? "الفاصل غير مدعوم" : not profileSelected ? "اختر القطاع" : profileMismatch ? "ملف قطاع غير مطابق" : completeness < 60 ? "بيانات غير كافية" : specialized ? "مؤشرات أولية فقط" : na(score) ? "غير متاح" : score >= 80 and completeness >= 75 and redFlags == 0 ? "جودة قوية" : score >= 65 ? "جودة جيدة" : score >= 50 ? "جودة متوسطة" : "جودة ضعيفة"
+color gradeColor = not stockAllowed or not supportedChartTimeframe or profileMismatch or completeness < 60 ? color.red : not profileSelected ? color.gray : specialized ? color.yellow : na(score) ? color.gray : score >= 80 and redFlags == 0 ? color.lime : score >= 65 ? color.aqua : score >= 50 ? color.orange : color.red
+
+string scoreReading = not stockAllowed ? "الأسهم فقط" : not supportedChartTimeframe ? "حتى الشهري فقط" : not profileSelected ? "اختر النوع" : profileMismatch ? "نوع غير مطابق" : specialized ? (na(score) ? "غير متاح" : "درجة أولية " + str.tostring(math.round(score))) : na(score) ? "غير متاح" : str.tostring(math.round(score)) + "/100"
+float profitabilityOverviewScore = f_average3(profitabilityScore, returnCapitalScore, marginScore)
+float growthOverviewScore = f_average2(growthScore, epsGrowthScore)
+float cashOverviewScore = f_average2(cashScore, fcfScore)
+float debtOverviewScore = bank ? na : f_average2(leverageScore, liquidityScore)
+float valueOverviewScore = f_average2(valuationScore, priceBookScore)
+// Pine cannot read news headlines; this flag uses published financial series only.
+bool positiveReportedResults = not na(growthOverviewScore) and not na(profitabilityOverviewScore) and growthOverviewScore >= 50 and profitabilityOverviewScore >= 50 and (na(operatingCash) or operatingCash > 0)
+string profitOverview = f_plain_level(profitabilityOverviewScore) + (na(roe) ? "" : " | عائد " + f_pct(roe))
+string growthOverview = f_plain_level(growthOverviewScore) + (na(revenueGrowth) ? "" : " | مبيعات " + f_pct(revenueGrowth)) + (epsTurnaround ? " | تحول ربحي" : positiveReportedResults ? " | نمو وربحية إيجابيان" : "")
+string cashOverview = f_plain_level(cashOverviewScore) + (na(freeCash) ? "" : freeCash > 0 ? " | تدفق حر موجب" : " | تدفق حر سلبي") + (lossWithPositiveOperatingCash ? " | تشغيل موجب مع خسارة" : "")
+string debtOverview = bank ? "يحتاج مؤشرات بنكية متخصصة" : f_plain_level(debtOverviewScore) + (na(debtToEquity) ? "" : " | الدين " + f_num(debtToEquity) + "× الحقوق")
+string valueOverview = f_valuation_level(valueOverviewScore) + (na(pe) ? "" : " | مكرر الربح " + f_num(pe)) + (na(valuationReferencePrice) ? "" : " | سعر مرجعي " + f_num(valuationReferencePrice))
+
+// request.financial() does not expose the official publication timestamp.
+// A chart-bar timestamp changes with aggregation, so do not present it as a
+// report date. This text remains truthful and invariant across chart TFs.
+string updateOverview = "قوائم مكتملة | مرجع سنوي/ربعي موحد"
+string shortWarning = not stockAllowed ? "هذا المؤشر للأسهم فقط" : not supportedChartTimeframe ? "الفواصل الأعلى من شهر غير مدعومة" : not profileSelected ? "اختر نوع الشركة" : profileMismatch ? "نوع الشركة المختار غير مطابق" : not industryKnown ? "القطاع غير متحقق؛ راجع الاختيار يدويًا" : completeness < 60 ? "البيانات ناقصة؛ لا تعتمد الحكم" : completeness < 75 ? "بعض البيانات ناقصة" : specialized ? "تقييم أولي ويحتاج نسبًا قطاعية متخصصة" : redFlags > 0 ? "يوجد " + str.tostring(redFlags) + " تنبيه مالي خُصم من الجودة" : "لا توجد ملاحظات كمية مباشرة"
+color warningColor = not stockAllowed or not supportedChartTimeframe or profileMismatch or completeness < 60 ? color.red : not profileSelected ? color.gray : completeness < 75 or specialized or redFlags > 0 ? color.orange : color.lime
+
+var table t = table.new(tablePosition, 2, 9, frame_width = 1, border_width = 1)
+if barstate.isfirst
+    table.merge_cells(t, 0, 0, 1, 0)
+
+f_cell(int column, int row, string value, int width, color background, color foreground, string align) =>
+    table.cell(t, column, row, value, width = width, text_size = tableTextSize, text_color = foreground, bgcolor = background, text_halign = align, text_valign = text.align_center)
+
+if barstate.islast
+    if showTable
+        color dark = color.new(#111827, 8)
+        color head = color.new(#1D4ED8, 12)
+        color soft = color.new(#334155, 22)
+        color textColor = color.white
+        color completenessColor = completeness < 60 ? color.red : completeness < 75 ? color.orange : textColor
+        f_cell(0, 0, "جودة مالية | SC-FQ3.4", 48, head, textColor, text.align_center)
+        f_cell(0, 1, "الحكم العام", 15, soft, textColor, text.align_right)
+        f_cell(1, 1, grade + " | " + scoreReading, 33, dark, gradeColor, text.align_right)
+        f_cell(0, 2, "الربحية", 15, soft, textColor, text.align_right)
+        f_cell(1, 2, profitOverview, 33, dark, textColor, text.align_right)
+        f_cell(0, 3, "النمو", 15, soft, textColor, text.align_right)
+        f_cell(1, 3, growthOverview, 33, dark, textColor, text.align_right)
+        f_cell(0, 4, "النقد", 15, soft, textColor, text.align_right)
+        f_cell(1, 4, cashOverview, 33, dark, textColor, text.align_right)
+        f_cell(0, 5, "الديون", 15, soft, textColor, text.align_right)
+        f_cell(1, 5, debtOverview, 33, dark, textColor, text.align_right)
+        f_cell(0, 6, "جاذبية التقييم", 15, soft, textColor, text.align_right)
+        f_cell(1, 6, valueOverview, 33, dark, textColor, text.align_right)
+        f_cell(0, 7, "البيانات", 15, soft, textColor, text.align_right)
+        f_cell(1, 7, "اكتمال الجودة " + str.tostring(math.round(completeness)) + "% | " + updateOverview, 33, dark, completenessColor, text.align_right)
+        f_cell(0, 8, "ملاحظة", 15, soft, textColor, text.align_right)
+        f_cell(1, 8, shortWarning, 33, dark, warningColor, text.align_right)
+    else
+        table.clear(t, 0, 0, 1, 8)

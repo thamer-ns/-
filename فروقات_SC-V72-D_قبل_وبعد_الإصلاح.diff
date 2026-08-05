@@ -1,0 +1,678 @@
+--- "/mnt/data/\330\250\331\210\330\265\331\204\330\251_\330\247\331\204\330\252\330\255\331\204\331\212\331\204_\330\247\331\204\331\212\331\210\331\205\331\212_SC-V72-D_\330\252\330\257\331\202\331\212\331\202_\330\247\331\204\330\263\331\212\331\210\331\204\330\251_\331\210\330\247\331\204\330\255\330\254\331\205(2).txt"	2026-07-21 13:22:26.301697526 +0000
++++ "/mnt/data/\330\250\331\210\330\265\331\204\330\251_\330\247\331\204\330\252\330\255\331\204\331\212\331\204_\330\247\331\204\331\212\331\210\331\205\331\212_SC-V72-D_\330\245\330\265\331\204\330\247\330\255_\330\247\331\204\330\252\330\254\331\205\331\212\330\271_\331\210\330\247\331\204\330\271\330\261\330\266.txt"	2026-07-21 13:36:37.918728308 +0000
+@@ -336,6 +336,37 @@
+     "تعارض القنوات")
+ 
+ 
++var array<string> TXT_GENERAL_EVENT = array.from(
++    "",
++    "",
++    "سحب مزدوج",
++    "اختراق وهمي",
++    "كسر وهمي",
++    "اختبار سحب",
++    "اختبار سحب",
++    "سحب سيولة",
++    "سحب سيولة",
++    "كسر وهمي",
++    "اختراق وهمي",
++    "اختبار طلب",
++    "اختبار عرض",
++    "قاعان",
++    "قمتان",
++    "",
++    "",
++    "إعادة اختبار",
++    "إعادة اختبار",
++    "CHoCH صاعد",
++    "CHoCH هابط",
++    "BOS صاعد",
++    "BOS هابط",
++    "اختراق نطاق",
++    "كسر نطاق",
++    "رأس وكتفين مقلوب",
++    "رأس وكتفين")
++
++var array<string> TXT_HEATMAP_TIER = array.from("—", "منخفض", "طبيعي", "متوسط", "مرتفع", "فائق")
++
+ // النصوص الطويلة معزولة في دوال حتى لا تستهلك عقد النطاق الرئيسي.
+ f_zone_pattern_text(int patternCode, int baseCount) =>
+     string patternName = patternCode == 1 ? "طلب DBR" : patternCode == 2 ? "طلب RBR" : patternCode == -1 ? "عرض RBD" : "عرض DBD"
+@@ -380,6 +411,21 @@
+ // an impractical stop and exaggerated targets.
+ // Adaptive center: momentum changes its smoothing speed. The ATR band changes
+ // state only on a confirmed close and never creates a trade by itself.
++f_clear_line(line objectId) =>
++    if not na(objectId)
++        line.delete(objectId)
++    line(na)
++
++f_clear_label(label objectId) =>
++    if not na(objectId)
++        label.delete(objectId)
++    label(na)
++
++f_clear_box(box objectId) =>
++    if not na(objectId)
++        box.delete(objectId)
++    box(na)
++
+ f_nearest_price_level(bool searchAbove, float currentPrice, float minimumDistance, float candidate1, float candidate2, float candidate3, float candidate4, float candidate5, float candidate6, float candidate7, float candidate8, float candidate9, float candidate10) =>
+     array<float> candidateLevels = array.from(candidate1, candidate2, candidate3, candidate4, candidate5, candidate6, candidate7, candidate8, candidate9, candidate10)
+     float nearestLevel = na
+@@ -698,21 +744,14 @@
+                 line.set_style(nextParallelLine, parallelStyle)
+                 line.set_width(nextParallelLine, 1)
+         else if not na(nextParallelLine)
+-            line.delete(nextParallelLine)
+-            nextParallelLine := na
++            nextParallelLine := f_clear_line(nextParallelLine)
+     else
+         if not na(nextZoneFill)
+             linefill.delete(nextZoneFill)
+             nextZoneFill := na
+-        if not na(nextZoneLine)
+-            line.delete(nextZoneLine)
+-            nextZoneLine := na
+-        if not na(nextTrendLine)
+-            line.delete(nextTrendLine)
+-            nextTrendLine := na
+-        if not na(nextParallelLine)
+-            line.delete(nextParallelLine)
+-            nextParallelLine := na
++        nextZoneLine := f_clear_line(nextZoneLine)
++        nextTrendLine := f_clear_line(nextTrendLine)
++        nextParallelLine := f_clear_line(nextParallelLine)
+     [nextTrendLine, nextZoneLine, nextZoneFill, nextParallelLine]
+ 
+ // Build one recent multi-touch cluster from pivots of the same type. Keeping
+@@ -929,16 +968,18 @@
+ float volumeZScore = volumeAvailable and not na(volumeRegimeMean) and volumeRegimeDeviation > 0 ? (relativeVolume - volumeRegimeMean) / volumeRegimeDeviation : na
+ bool statisticalVolumeHigh = not na(volumeZScore) and volumeZScore >= 1.0
+ bool statisticalVolumeExtreme = not na(volumeZScore) and volumeZScore >= 2.0
+-// طبقات Heatmap Volume: نفس فكرة انحراف الحجم عن متوسطه، لكن بمتوسطات مغلقة فقط حتى لا تتغير العتبة بسبب الشمعة الجاري تصنيفها.
+-int heatmapVolumeLookback = chartSeconds <= 24 * 60 * 60 ? 610 : chartSeconds <= 7 * 24 * 60 * 60 ? 260 : chartSeconds <= 31 * 24 * 60 * 60 ? 120 : 40
+-float heatmapVolumeMean = ta.sma(volume[1], heatmapVolumeLookback)
+-float heatmapVolumeDeviation = ta.stdev(volume[1], heatmapVolumeLookback)
+-float heatmapVolumeZ = volumeAvailable and not na(heatmapVolumeMean) and heatmapVolumeDeviation > 0 ? (volume - heatmapVolumeMean) / heatmapVolumeDeviation : na
+-int heatmapVolumeTier = na(heatmapVolumeZ) ? 0 : heatmapVolumeZ > 4.0 ? 5 : heatmapVolumeZ > 2.5 ? 4 : heatmapVolumeZ > 1.0 ? 3 : heatmapVolumeZ > -0.5 ? 2 : 1
+-bool heatmapVolumeMediumOrHigher = heatmapVolumeTier >= 3
+-bool heatmapVolumeHighOrHigher = heatmapVolumeTier >= 4
+-bool heatmapVolumeExtreme = heatmapVolumeTier >= 5
+-bool volumePass = not useVolumeFilter or (volumeAvailable and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher))
++// طبقات Heatmap Volume محسوبة من الشموع المغلقة السابقة فقط.
++f_heatmap_volume_state() =>
++    int lookback = chartSeconds <= 24 * 60 * 60 ? 610 : chartSeconds <= 7 * 24 * 60 * 60 ? 260 : chartSeconds <= 31 * 24 * 60 * 60 ? 120 : 40
++    float meanValue = ta.sma(volume[1], lookback)
++    float deviationValue = ta.stdev(volume[1], lookback)
++    float zValue = volumeAvailable and not na(meanValue) and deviationValue > 0 ? (volume - meanValue) / deviationValue : na
++    int tier = na(zValue) ? 0 : zValue > 4.0 ? 5 : zValue > 2.5 ? 4 : zValue > 1.0 ? 3 : zValue > -0.5 ? 2 : 1
++    [zValue, tier, tier >= 3, tier >= 4, tier >= 5]
++
++[heatmapVolumeZ, heatmapVolumeTier, heatmapVolumeMediumOrHigher, heatmapVolumeHighOrHigher, heatmapVolumeExtreme] = f_heatmap_volume_state()
++bool standardVolumeEffort = relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher
++bool volumePass = not useVolumeFilter or (volumeAvailable and standardVolumeEffort)
+ 
+ float vwapValue = ta.vwap(hlc3, selectedVwapAnchor)
+ // Structural VWAP is anchored by events calculated later in the script. The
+@@ -1005,7 +1046,7 @@
+ float averageSpread = ta.sma(candleRange, volumeLength)
+ float relativeSpread = not na(averageSpread) and averageSpread > 0 ? candleRange / averageSpread : na
+ float closeLocation = (close - low) / candleRange
+-bool vsaHighEffort = useVsaAnalysis and volumeAvailable and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher)
++bool vsaHighEffort = useVsaAnalysis and volumeAvailable and standardVolumeEffort
+ bool vsaWideResult = not na(relativeSpread) and relativeSpread >= 1.20
+ bool vsaNarrowResult = not na(relativeSpread) and relativeSpread <= 0.75
+ bool bullishVsaEffortResult = vsaHighEffort and vsaWideResult and closeLocation >= 0.65
+@@ -1275,14 +1316,12 @@
+         color resistanceRoleColor = confirmedResistanceActsAsSupport ? bullColor : bearColor
+         strongResistanceVisualZone := f_update_horizontal_sr_zone(strongResistanceVisualZone, nz(strongResistanceRecentBar, bar_index), bar_index + channelForwardBars, confirmedResistanceTop, confirmedResistanceBottom, resistanceRoleColor, confirmedResistanceActsAsSupport ? "منطقة دعم بعد اختراق" : "منطقة مقاومة")
+     else if not na(strongResistanceVisualZone)
+-        box.delete(strongResistanceVisualZone)
+-        strongResistanceVisualZone := na
++        strongResistanceVisualZone := f_clear_box(strongResistanceVisualZone)
+     if showHorizontalSr and confirmedSupportVisualRelevant and not na(confirmedSupportTop) and not na(confirmedSupportBottom)
+         color supportRoleColor = confirmedSupportActsAsResistance ? bearColor : bullColor
+         strongSupportVisualZone := f_update_horizontal_sr_zone(strongSupportVisualZone, nz(strongSupportRecentBar, bar_index), bar_index + channelForwardBars, confirmedSupportTop, confirmedSupportBottom, supportRoleColor, confirmedSupportActsAsResistance ? "منطقة مقاومة بعد كسر" : "منطقة دعم")
+     else if not na(strongSupportVisualZone)
+-        box.delete(strongSupportVisualZone)
+-        strongSupportVisualZone := na
++        strongSupportVisualZone := f_clear_box(strongSupportVisualZone)
+ 
+ // The complete principal-layer engine is isolated in a function so Pine does
+ // not count its internal statements against the main-body compilation limit.
+@@ -1680,21 +1719,28 @@
+ bool bullishBreak = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingHigh) and not highWasBroken and close > lastSwingHigh + breakBuffer
+ bool bearishBreak = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingLow) and not lowWasBroken and close < lastSwingLow - breakBuffer
+ 
+-// سحب السيولة يحتاج اختراقا واضحا للمستوى ثم استردادا فعليا وذيل رفض؛ لا يكفي لمس بسيط أو إغلاق قريب من المستوى.
+-float sweepLowerWickShare = math.max(math.min(open, close) - low, 0.0) / candleRange
+-float sweepUpperWickShare = math.max(high - math.max(open, close), 0.0) / candleRange
+-float sweepReclaimBuffer = math.max(syminfo.mintick * 2.0, safeAtr * 0.04)
+-float sweepMaximumPenetration = safeAtr * (timeframe.isintraday ? 1.00 : 1.25)
+-float bullishSweepPenetration = not na(lastSwingLow) ? lastSwingLow - low : na
+-float bearishSweepPenetration = not na(lastSwingHigh) ? high - lastSwingHigh : na
+-bool sweepVolumeAcceptance = not volumeAvailable or heatmapVolumeMediumOrHigher or statisticalVolumeHigh or relativeVolume >= 0.85
+-bool bullishSweepRaw = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingLow) and not lowWasBroken and not lowWasSwept and bullishSweepPenetration >= breakBuffer and bullishSweepPenetration <= sweepMaximumPenetration and close >= lastSwingLow + sweepReclaimBuffer
+-bool bearishSweepRaw = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingHigh) and not highWasBroken and not highWasSwept and bearishSweepPenetration >= breakBuffer and bearishSweepPenetration <= sweepMaximumPenetration and close <= lastSwingHigh - sweepReclaimBuffer
+-bool twoSidedLiquiditySweep = bullishSweepRaw and bearishSweepRaw
+-bool bullishSweep = bullishSweepRaw and not bearishSweepRaw and closeLocation >= 0.55 and sweepLowerWickShare >= 0.30 and (sweepVolumeAcceptance or sweepLowerWickShare >= 0.55)
+-bool bearishSweep = bearishSweepRaw and not bullishSweepRaw and closeLocation <= 0.45 and sweepUpperWickShare >= 0.30 and (sweepVolumeAcceptance or sweepUpperWickShare >= 0.55)
+-bool bullishLiquiditySweep = bullishSweep
+-bool bearishLiquiditySweep = bearishSweep
++// جودة الرفض موحدة لسحب السيولة، وهمي القناة، وفشل الكسر.
++f_rejection_quality(bool bullishSide, float wickShare, bool bodyAlternative, bool participationOkay) =>
++    bool locationOkay = bullishSide ? closeLocation >= 0.55 : closeLocation <= 0.45
++    bool shapeOkay = bodyAlternative ? bodyRatio >= 0.25 or wickShare >= 0.35 : wickShare >= 0.30
++    locationOkay and shapeOkay and (participationOkay or wickShare >= 0.55)
++
++f_liquidity_sweep_state() =>
++    float lowerWickShare = math.max(math.min(open, close) - low, 0.0) / candleRange
++    float upperWickShare = math.max(high - math.max(open, close), 0.0) / candleRange
++    float reclaimBuffer = math.max(syminfo.mintick * 2.0, safeAtr * 0.04)
++    float maximumPenetration = safeAtr * 1.25
++    float lowerPenetration = not na(lastSwingLow) ? lastSwingLow - low : na
++    float upperPenetration = not na(lastSwingHigh) ? high - lastSwingHigh : na
++    bool participationOkay = not volumeAvailable or heatmapVolumeMediumOrHigher or statisticalVolumeHigh or relativeVolume >= 0.85
++    bool bullishRaw = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingLow) and not lowWasBroken and not lowWasSwept and lowerPenetration >= breakBuffer and lowerPenetration <= maximumPenetration and close >= lastSwingLow + reclaimBuffer
++    bool bearishRaw = barstate.isconfirmed and swingLevelsCompatible and not na(lastSwingHigh) and not highWasBroken and not highWasSwept and upperPenetration >= breakBuffer and upperPenetration <= maximumPenetration and close <= lastSwingHigh - reclaimBuffer
++    bool twoSided = bullishRaw and bearishRaw
++    bool bullishQualified = bullishRaw and not bearishRaw and f_rejection_quality(true, lowerWickShare, false, participationOkay)
++    bool bearishQualified = bearishRaw and not bullishRaw and f_rejection_quality(false, upperWickShare, false, participationOkay)
++    [lowerWickShare, upperWickShare, participationOkay, twoSided, bullishQualified, bearishQualified]
++
++[sweepLowerWickShare, sweepUpperWickShare, sweepVolumeAcceptance, twoSidedLiquiditySweep, bullishSweep, bearishSweep] = f_liquidity_sweep_state()
+ 
+ var int structureBias = 0
+ var int lastStructureBreakBar = na
+@@ -1830,8 +1876,7 @@
+     demandZonePatternCode := demandPatternCandidate
+     float demandWidth = demandProximalCandidate - demandDistalCandidate
+     demandZoneQuality := (demandBaseCandidateCount <= 3 ? 1 : 0) + (demandWidth <= safeAtr * 1.50 ? 1 : 0) + (volumeAvailable and (relativeVolume >= 1.0 or heatmapVolumeMediumOrHigher) ? 1 : 0) + (bodyRatio >= 0.70 ? 1 : 0)
+-    if not na(demandZoneBox)
+-        box.delete(demandZoneBox)
++    demandZoneBox := f_clear_box(demandZoneBox)
+     demandZoneBox := stockChartAllowed and showSupplyDemandZones ? box.new(left = bar_index - demandFarthestOffset, top = demandZoneHigh, right = bar_index + visualPlanBoxOffsetBars, bottom = demandZoneLow, xloc = xloc.bar_index, extend = extend.right, border_color = color.new(bullColor, zoneBorderTransparency), border_width = 1, bgcolor = color.new(bullColor, zoneFillTransparency), text = "منطقة طلب", text_color = color.new(bullColor, 8), text_size = size.tiny, text_halign = text.align_right, text_valign = text.align_center) : na
+ 
+ if bearishZoneDisplacement and validSupplyCandidate
+@@ -1844,8 +1889,7 @@
+     supplyZonePatternCode := supplyPatternCandidate
+     float supplyWidth = supplyDistalCandidate - supplyProximalCandidate
+     supplyZoneQuality := (supplyBaseCandidateCount <= 3 ? 1 : 0) + (supplyWidth <= safeAtr * 1.50 ? 1 : 0) + (volumeAvailable and (relativeVolume >= 1.0 or heatmapVolumeMediumOrHigher) ? 1 : 0) + (bodyRatio >= 0.70 ? 1 : 0)
+-    if not na(supplyZoneBox)
+-        box.delete(supplyZoneBox)
++    supplyZoneBox := f_clear_box(supplyZoneBox)
+     supplyZoneBox := stockChartAllowed and showSupplyDemandZones ? box.new(left = bar_index - supplyFarthestOffset, top = supplyZoneHigh, right = bar_index + visualPlanBoxOffsetBars, bottom = supplyZoneLow, xloc = xloc.bar_index, extend = extend.right, border_color = color.new(bearColor, zoneBorderTransparency), border_width = 1, bgcolor = color.new(bearColor, zoneFillTransparency), text = "منطقة عرض", text_color = color.new(bearColor, 8), text_size = size.tiny, text_halign = text.align_right, text_valign = text.align_center) : na
+ 
+ bool demandZoneInvalidated = barstate.isconfirmed and demandZoneActive and close < demandZoneLow - breakBuffer
+@@ -1879,9 +1923,7 @@
+ if demandZoneInvalidated or demandZoneExpired
+     demandZoneActive := false
+     demandZoneRetested := false
+-    if not na(demandZoneBox)
+-        box.delete(demandZoneBox)
+-        demandZoneBox := na
++    demandZoneBox := f_clear_box(demandZoneBox)
+     demandZoneHigh := na
+     demandZoneLow := na
+     demandZoneCreatedBar := na
+@@ -1891,9 +1933,7 @@
+ if supplyZoneInvalidated or supplyZoneExpired
+     supplyZoneActive := false
+     supplyZoneRetested := false
+-    if not na(supplyZoneBox)
+-        box.delete(supplyZoneBox)
+-        supplyZoneBox := na
++    supplyZoneBox := f_clear_box(supplyZoneBox)
+     supplyZoneHigh := na
+     supplyZoneLow := na
+     supplyZoneCreatedBar := na
+@@ -1954,8 +1994,8 @@
+ bool effectiveUpperChannelFakeout = majorChannelUpperFakeout or channelUpperFakeout
+ bool effectiveLowerChannelFakeout = majorChannelLowerFakeout or channelLowerFakeout
+ float effectiveChannelFakeoutLevel = channelUpperFakeout or channelLowerFakeout ? channelFakeoutLevel : majorChannelUpperFakeout ? majorChannelUpperNow : majorChannelLowerFakeout ? majorChannelLowerNow : na
+-bool qualifiedUpperChannelFakeout = effectiveUpperChannelFakeout and closeLocation <= 0.45 and (bodyRatio >= 0.25 or sweepUpperWickShare >= 0.35) and (sweepVolumeAcceptance or sweepUpperWickShare >= 0.55)
+-bool qualifiedLowerChannelFakeout = effectiveLowerChannelFakeout and closeLocation >= 0.55 and (bodyRatio >= 0.25 or sweepLowerWickShare >= 0.35) and (sweepVolumeAcceptance or sweepLowerWickShare >= 0.55)
++bool qualifiedUpperChannelFakeout = effectiveUpperChannelFakeout and f_rejection_quality(false, sweepUpperWickShare, true, sweepVolumeAcceptance)
++bool qualifiedLowerChannelFakeout = effectiveLowerChannelFakeout and f_rejection_quality(true, sweepLowerWickShare, true, sweepVolumeAcceptance)
+ int technicalOpinionCode = (structureDirectionConflict ? 1 : channelLayerConflict ? 12 : convergingImportantStructure ? 2 : qualifiedUpperChannelFakeout ? 3 : qualifiedLowerChannelFakeout ? 4 : not (majorChannelReady or channelReady) ? 5 : effectiveChannelBias == 1 and (majorChannelBreakoutDown or channelBreakoutDown) ? 6 : effectiveChannelBias == -1 and (majorChannelBreakoutUp or channelBreakoutUp) ? 7 : resolvedStructureBias == 1 and effectiveChannelSignal == 1 ? 8 : resolvedStructureBias == -1 and effectiveChannelSignal == -1 ? 9 : effectiveChannelBias == 1 ? 10 : 11)
+ string technicalOpinion = (f_text_code(TXT_TECHNICAL_OPINION, technicalOpinionCode))
+ 
+@@ -1981,12 +2021,10 @@
+ bool insideRetestWindow = watchAfterBreak and barsFromBreak <= retestWindow
+ float retestTolerance = safeAtr * retestAtrTolerance
+ float failureConfirmationBuffer = math.max(breakBuffer * 0.50, safeAtr * 0.04)
+-float fakeoutUpperWickShare = math.max(high - math.max(open, close), 0.0) / candleRange
+-float fakeoutLowerWickShare = math.max(math.min(open, close) - low, 0.0) / candleRange
+ bool bullishBreakFailureRaw = barstate.isconfirmed and insideFakeoutWindow and priorWatchedBreakDirection == 1 and close < priorWatchedBreakLevel - failureConfirmationBuffer and close[1] >= priorWatchedBreakLevel - failureConfirmationBuffer
+ bool bearishBreakFailureRaw = barstate.isconfirmed and insideFakeoutWindow and priorWatchedBreakDirection == -1 and close > priorWatchedBreakLevel + failureConfirmationBuffer and close[1] <= priorWatchedBreakLevel + failureConfirmationBuffer
+-bool bullishBreakFailed = bullishBreakFailureRaw and closeLocation <= 0.45 and (bodyRatio >= 0.25 or fakeoutUpperWickShare >= 0.35) and (sweepVolumeAcceptance or fakeoutUpperWickShare >= 0.55)
+-bool bearishBreakFailed = bearishBreakFailureRaw and closeLocation >= 0.55 and (bodyRatio >= 0.25 or fakeoutLowerWickShare >= 0.35) and (sweepVolumeAcceptance or fakeoutLowerWickShare >= 0.55)
++bool bullishBreakFailed = bullishBreakFailureRaw and f_rejection_quality(false, sweepUpperWickShare, true, sweepVolumeAcceptance)
++bool bearishBreakFailed = bearishBreakFailureRaw and f_rejection_quality(true, sweepLowerWickShare, true, sweepVolumeAcceptance)
+ bool bullishRetest = barstate.isconfirmed and insideRetestWindow and priorWatchedBreakDirection == 1 and not bullishBreakFailed and low >= priorWatchedBreakLevel - retestTolerance and low <= priorWatchedBreakLevel + retestTolerance and close > priorWatchedBreakLevel and closeLocation >= 0.55
+ bool bearishRetest = barstate.isconfirmed and insideRetestWindow and priorWatchedBreakDirection == -1 and not bearishBreakFailed and high <= priorWatchedBreakLevel + retestTolerance and high >= priorWatchedBreakLevel - retestTolerance and close < priorWatchedBreakLevel and closeLocation <= 0.45
+ float resolvedBreakEventLevel = bullishBreakFailed or bearishBreakFailed or bullishRetest or bearishRetest ? priorWatchedBreakLevel : na
+@@ -2020,12 +2058,12 @@
+     watchedSweepLevel := na
+     watchedSweepExtreme := na
+     watchedSweepBar := na
+-else if bullishLiquiditySweep
++else if bullishSweep
+     watchedSweepDirection := 1
+     watchedSweepLevel := lastSwingLow
+     watchedSweepExtreme := low
+     watchedSweepBar := bar_index
+-else if bearishLiquiditySweep
++else if bearishSweep
+     watchedSweepDirection := -1
+     watchedSweepLevel := lastSwingHigh
+     watchedSweepExtreme := high
+@@ -2113,12 +2151,8 @@
+ bool wyckoffSequenceExpired = wyckoffBuildingExpired or wyckoffPhaseEExpired
+ if wyckoffSequenceExpired
+     f_clear_label_array(wyckoffModelLabels)
+-    if not na(wyckoffSupportLine)
+-        line.delete(wyckoffSupportLine)
+-        wyckoffSupportLine := na
+-    if not na(wyckoffResistanceLine)
+-        line.delete(wyckoffResistanceLine)
+-        wyckoffResistanceLine := na
++    wyckoffSupportLine := f_clear_line(wyckoffSupportLine)
++    wyckoffResistanceLine := f_clear_line(wyckoffResistanceLine)
+     wyckoffMode := 0
+     wyckoffStage := 0
+     wyckoffPhase := 0
+@@ -2146,12 +2180,8 @@
+ 
+ if startNewWyckoffModel
+     f_clear_label_array(wyckoffModelLabels)
+-    if not na(wyckoffSupportLine)
+-        line.delete(wyckoffSupportLine)
+-        wyckoffSupportLine := na
+-    if not na(wyckoffResistanceLine)
+-        line.delete(wyckoffResistanceLine)
+-        wyckoffResistanceLine := na
++    wyckoffSupportLine := f_clear_line(wyckoffSupportLine)
++    wyckoffResistanceLine := f_clear_line(wyckoffResistanceLine)
+     // Fully clear the previous model before assigning the new event. Without
+     // this reset, a fresh PS/PSY could inherit the old range boundary or climax
+     // statistics and display a false completed range.
+@@ -2202,8 +2232,8 @@
+ bool wyckoffSupportCrossEvent = barstate.isconfirmed and wyckoffMode == -1 and wyckoffStage >= 4 and wyckoffStage < 6 and not wyckoffSupportWasBroken and not na(wyckoffRangeSupport) and close < wyckoffRangeSupport - breakBuffer and close[1] >= nz(wyckoffRangeSupport[1], wyckoffRangeSupport) - nz(breakBuffer[1], breakBuffer)
+ bool wyckoffResistanceBreak = wyckoffResistanceCrossEvent and bullishBreakCandleQuality
+ bool wyckoffSupportBreak = wyckoffSupportCrossEvent and bearishBreakCandleQuality
+-bool accumulationSosEvent = wyckoffResistanceBreak and volumeAvailable and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher) and vsaWideResult and closeLocation >= 0.60
+-bool distributionSowEvent = wyckoffSupportBreak and volumeAvailable and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher) and vsaWideResult and closeLocation <= 0.40
++bool accumulationSosEvent = wyckoffResistanceBreak and volumeAvailable and standardVolumeEffort and vsaWideResult and closeLocation >= 0.60
++bool distributionSowEvent = wyckoffSupportBreak and volumeAvailable and standardVolumeEffort and vsaWideResult and closeLocation <= 0.40
+ bool quietWyckoffBackupPivot = volumeAvailable[pivotBars] and relativeVolume[pivotBars] <= 1.10 and not na(relativeSpread[pivotBars]) and relativeSpread[pivotBars] <= 1.0
+ bool accumulationLpsEvent = wyckoffMode == 1 and wyckoffStage >= 6 and wyckoffStage <= 7 and newPivotLow and not na(wyckoffSignBar) and confirmedPivotBar > wyckoffSignBar and quietWyckoffBackupPivot and not na(wyckoffRangeResistance) and math.abs(pivotLow - wyckoffRangeResistance) <= wyckoffRangeTolerance and close[pivotBars] > wyckoffRangeResistance and closeLocation[pivotBars] >= 0.55
+ bool distributionLpsyEvent = wyckoffMode == -1 and wyckoffStage >= 6 and wyckoffStage <= 7 and newPivotHigh and not na(wyckoffSignBar) and confirmedPivotBar > wyckoffSignBar and quietWyckoffBackupPivot and not na(wyckoffRangeSupport) and math.abs(pivotHigh - wyckoffRangeSupport) <= wyckoffRangeTolerance and close[pivotBars] < wyckoffRangeSupport and closeLocation[pivotBars] <= 0.45
+@@ -2385,20 +2415,16 @@
+             line.set_xy2(wyckoffResistanceLine, bar_index + 1, wyckoffRangeResistance)
+             line.set_color(wyckoffResistanceLine, color.new(bearColor, wyckoffRangeLineTransparency))
+     else
+-        if not na(wyckoffSupportLine)
+-            line.delete(wyckoffSupportLine)
+-            wyckoffSupportLine := na
+-        if not na(wyckoffResistanceLine)
+-            line.delete(wyckoffResistanceLine)
+-            wyckoffResistanceLine := na
++        wyckoffSupportLine := f_clear_line(wyckoffSupportLine)
++        wyckoffResistanceLine := f_clear_line(wyckoffResistanceLine)
+ 
+ // Keep true Wyckoff model evidence separate from generic liquidity sweeps and
+ // failed breaks. They share one capped auction/trigger vote later, but the
+ // dashboard must not label every generic sweep as a Wyckoff event.
+ int barsSinceBullishWyckoff = ta.barssince(accumulationSpringEvent or accumulationSpringTestEvent or accumulationSosEvent or accumulationLpsEvent or accumulationPhaseEEvent)
+ int barsSinceBearishWyckoff = ta.barssince(distributionUtadEvent or distributionUtadTestEvent or distributionSowEvent or distributionLpsyEvent or distributionPhaseEEvent)
+-int barsSinceBullishLiquidityBehavior = ta.barssince(bullishLiquiditySweep or bearishBreakFailed or bullishWyckoffTest)
+-int barsSinceBearishLiquidityBehavior = ta.barssince(bearishLiquiditySweep or bullishBreakFailed or bearishWyckoffTest)
++int barsSinceBullishLiquidityBehavior = ta.barssince(bullishSweep or bearishBreakFailed or bullishWyckoffTest)
++int barsSinceBearishLiquidityBehavior = ta.barssince(bearishSweep or bullishBreakFailed or bearishWyckoffTest)
+ bool recentBullishWyckoff = (not na(barsSinceBullishWyckoff) and barsSinceBullishWyckoff <= contextLookback) or wyckoffContextSignal == 1
+ bool recentBearishWyckoff = (not na(barsSinceBearishWyckoff) and barsSinceBearishWyckoff <= contextLookback) or wyckoffContextSignal == -1
+ bool recentBullishAuctionTrigger = recentBullishWyckoff or (not na(barsSinceBullishLiquidityBehavior) and barsSinceBullishLiquidityBehavior <= contextLookback)
+@@ -2471,8 +2497,8 @@
+ [insideBarRaw, bullishInsideBarSetup, bearishInsideBarSetup, volumeRisingAfterDecline, volumeRisingAfterAdvanceWithWeakResult, sidewaysRangeHigh, sidewaysRangeLow, sidewaysRangeReady, bullishInsideBarBreakRaw, bearishInsideBarBreakRaw, bullishRangeBreakRaw, bearishRangeBreakRaw, bullishInsideBarBreakout, bearishInsideBarBreakout, bullishRangeBreakAfterDecline, bearishRangeBreakAfterAdvance] = f_price_action_breakouts()
+ bool bullishCandleConfirmation = useCandleConfirmation and barstate.isconfirmed and (bullishReversalPatternRaw[1] and close > high[1] or bullishInsideBarBreakout)
+ bool bearishCandleConfirmation = useCandleConfirmation and barstate.isconfirmed and (bearishReversalPatternRaw[1] and close < low[1] or bearishInsideBarBreakout)
+-bool bullishCandleImportantContext = bullishWyckoffTest or bullishLiquiditySweep or bullishBreakFailed or bullishDemandRetest or bullishRetest or bullishChoch or bullishBos or bullishRangeBreakAfterDecline or accumulationSpringEvent or accumulationSpringTestEvent or accumulationSosEvent or accumulationLpsEvent or accumulationPhaseEEvent
+-bool bearishCandleImportantContext = bearishWyckoffTest or bearishLiquiditySweep or bearishBreakFailed or bearishSupplyRetest or bearishRetest or bearishChoch or bearishBos or bearishRangeBreakAfterAdvance or distributionUtadEvent or distributionUtadTestEvent or distributionSowEvent or distributionLpsyEvent or distributionPhaseEEvent
++bool bullishCandleImportantContext = bullishWyckoffTest or bullishSweep or bullishBreakFailed or bullishDemandRetest or bullishRetest or bullishChoch or bullishBos or bullishRangeBreakAfterDecline or accumulationSpringEvent or accumulationSpringTestEvent or accumulationSosEvent or accumulationLpsEvent or accumulationPhaseEEvent
++bool bearishCandleImportantContext = bearishWyckoffTest or bearishSweep or bearishBreakFailed or bearishSupplyRetest or bearishRetest or bearishChoch or bearishBos or bearishRangeBreakAfterAdvance or distributionUtadEvent or distributionUtadTestEvent or distributionSowEvent or distributionLpsyEvent or distributionPhaseEEvent
+ bool bullishImportantCandleConfirmation = bullishCandleConfirmation and bullishCandleImportantContext
+ bool bearishImportantCandleConfirmation = bearishCandleConfirmation and bearishCandleImportantContext
+ int barsSinceBullishCandle = ta.barssince(bullishCandleConfirmation)
+@@ -2553,10 +2579,10 @@
+     string peakVolumeText = highVolumeResistanceActive ? "\nمنطقة حجم مقاومة " + f_price(highVolumeResistanceLow) + " - " + f_price(highVolumeResistanceHigh) : ""
+     string bottomVolumeText = highVolumeSupportActive ? "\nمنطقة حجم دعم " + f_price(highVolumeSupportLow) + " - " + f_price(highVolumeSupportHigh) : ""
+     volumeCandleLevelsState := volumeTrendText + peakVolumeText + bottomVolumeText
+-    bool bullishVsaAbsorption = vsaHighEffort and vsaNarrowResult and closeLocation >= 0.55 and (bullishLiquiditySweep or bearishBreakFailed)
+-    bool bearishVsaAbsorption = vsaHighEffort and vsaNarrowResult and closeLocation <= 0.45 and (bearishLiquiditySweep or bullishBreakFailed)
+-    bool bullishVsaConfirmation = useVsaAnalysis and barstate.isconfirmed and vsaHighEffort[1] and vsaNarrowResult[1] and close > high[1] and (resolvedStructureBias[1] == -1 or bullishLiquiditySweep[1] or bearishBreakFailed[1])
+-    bool bearishVsaConfirmation = useVsaAnalysis and barstate.isconfirmed and vsaHighEffort[1] and vsaNarrowResult[1] and close < low[1] and (resolvedStructureBias[1] == 1 or bearishLiquiditySweep[1] or bullishBreakFailed[1])
++    bool bullishVsaAbsorption = vsaHighEffort and vsaNarrowResult and closeLocation >= 0.55 and (bullishSweep or bearishBreakFailed)
++    bool bearishVsaAbsorption = vsaHighEffort and vsaNarrowResult and closeLocation <= 0.45 and (bearishSweep or bullishBreakFailed)
++    bool bullishVsaConfirmation = useVsaAnalysis and barstate.isconfirmed and vsaHighEffort[1] and vsaNarrowResult[1] and close > high[1] and (resolvedStructureBias[1] == -1 or bullishSweep[1] or bearishBreakFailed[1])
++    bool bearishVsaConfirmation = useVsaAnalysis and barstate.isconfirmed and vsaHighEffort[1] and vsaNarrowResult[1] and close < low[1] and (resolvedStructureBias[1] == 1 or bearishSweep[1] or bullishBreakFailed[1])
+     vsaSignal := not useVsaAnalysis ? 0 : (bullishVsaConfirmation or bullishVsaAbsorption or bullishVsaEffortResult) ? 1 : (bearishVsaConfirmation or bearishVsaAbsorption or bearishVsaEffortResult) ? -1 : 0
+     int vsaStateCode = (not useVsaAnalysis ? 1 : bullishVsaConfirmation ? 2 : bearishVsaConfirmation ? 3 : not volumeAvailable ? 4 : bullishVsaAbsorption ? 5 : bearishVsaAbsorption ? 6 : bullishVsaEffortResult ? 7 : bearishVsaEffortResult ? 8 : vsaHighEffort and vsaNarrowResult ? 9 : vsaHighEffort ? 10 : 0)
+     vsaState := (f_text_code(TXT_VSA_STATE, vsaStateCode))
+@@ -2592,15 +2618,21 @@
+     confirmedStructuralVwapReady := structuralVwapReady
+ // Preserve the exact broken level before the break watcher is reset below.
+ float confirmedRetestLevel = bullishRetest or bearishRetest ? resolvedBreakEventLevel : na
+-int generalEventCode = inverseHeadShouldersConfirmed ? 25 : headShouldersConfirmed ? 26 : (doubleBottomConfirmed ? 13 : doubleTopConfirmed ? 14 : bullishChoch ? 19 : bearishChoch ? 20 : bullishBos ? 21 : bearishBos ? 22 : twoSidedLiquiditySweep ? 2 : bullishBreakFailed ? 3 : bearishBreakFailed ? 4 : bullishLiquiditySweep ? 7 : bearishLiquiditySweep ? 8 : qualifiedLowerChannelFakeout ? 9 : qualifiedUpperChannelFakeout ? 10 : bullishWyckoffTest ? 5 : bearishWyckoffTest ? 6 : bullishDemandRetest ? 11 : bearishSupplyRetest ? 12 : bullishRetest ? 17 : bearishRetest ? 18 : bullishRangeBreakAfterDecline ? 23 : bearishRangeBreakAfterAdvance ? 24 : bullishImportantCandleConfirmation ? 15 : bearishImportantCandleConfirmation ? 16 : wyckoffEventNow ? 1 : 0)
+-int unifiedEventDirection = generalEventCode == 3 or generalEventCode == 6 or generalEventCode == 8 or generalEventCode == 10 or generalEventCode == 12 or generalEventCode == 14 or generalEventCode == 16 or generalEventCode == 18 or generalEventCode == 20 or generalEventCode == 22 or generalEventCode == 24 or generalEventCode == 26 ? -1 : generalEventCode == 4 or generalEventCode == 5 or generalEventCode == 7 or generalEventCode == 9 or generalEventCode == 11 or generalEventCode == 13 or generalEventCode == 15 or generalEventCode == 17 or generalEventCode == 19 or generalEventCode == 21 or generalEventCode == 23 or generalEventCode == 25 ? 1 : generalEventCode == 0 and bullishRsiDivergence ? 1 : generalEventCode == 0 and bearishRsiDivergence ? -1 : 0
+-string unifiedEventText = generalEventCode == 2 ? "سحب مزدوج" : generalEventCode == 3 ? "اختراق وهمي" : generalEventCode == 4 ? "كسر وهمي" : generalEventCode == 5 or generalEventCode == 6 ? "اختبار سحب" : generalEventCode == 7 or generalEventCode == 8 ? "سحب سيولة" : generalEventCode == 9 ? "كسر وهمي" : generalEventCode == 10 ? "اختراق وهمي" : generalEventCode == 11 ? "اختبار طلب" : generalEventCode == 12 ? "اختبار عرض" : generalEventCode == 13 ? "قاعان" : generalEventCode == 14 ? "قمتان" : generalEventCode == 15 or generalEventCode == 16 ? confirmedCandleName : generalEventCode == 17 or generalEventCode == 18 ? "إعادة اختبار" : generalEventCode == 19 ? "CHoCH صاعد" : generalEventCode == 20 ? "CHoCH هابط" : generalEventCode == 21 ? "BOS صاعد" : generalEventCode == 22 ? "BOS هابط" : generalEventCode == 23 ? "اختراق نطاق" : generalEventCode == 24 ? "كسر نطاق" : generalEventCode == 25 ? "رأس وكتفين مقلوب" : generalEventCode == 26 ? "رأس وكتفين" : generalEventCode == 0 and bullishRsiDivergence ? "دايفرجنس صاعد" : generalEventCode == 0 and bearishRsiDivergence ? "دايفرجنس هابط" : ""
++int generalEventCode = inverseHeadShouldersConfirmed ? 25 : headShouldersConfirmed ? 26 : (doubleBottomConfirmed ? 13 : doubleTopConfirmed ? 14 : bullishChoch ? 19 : bearishChoch ? 20 : bullishBos ? 21 : bearishBos ? 22 : twoSidedLiquiditySweep ? 2 : bullishBreakFailed ? 3 : bearishBreakFailed ? 4 : bullishSweep ? 7 : bearishSweep ? 8 : qualifiedLowerChannelFakeout ? 9 : qualifiedUpperChannelFakeout ? 10 : bullishWyckoffTest ? 5 : bearishWyckoffTest ? 6 : bullishDemandRetest ? 11 : bearishSupplyRetest ? 12 : bullishRetest ? 17 : bearishRetest ? 18 : bullishRangeBreakAfterDecline ? 23 : bearishRangeBreakAfterAdvance ? 24 : bullishImportantCandleConfirmation ? 15 : bearishImportantCandleConfirmation ? 16 : wyckoffEventNow ? 1 : 0)
++f_general_event_direction(int code) =>
++    code == 3 ? -1 : code == 4 ? 1 : code >= 5 and code <= 26 ? (code % 2 == 1 ? 1 : -1) : code == 0 and bullishRsiDivergence ? 1 : code == 0 and bearishRsiDivergence ? -1 : 0
++
++f_general_event_text(int code) =>
++    code == 0 ? (bullishRsiDivergence ? "دايفرجنس صاعد" : bearishRsiDivergence ? "دايفرجنس هابط" : "") : code == 15 or code == 16 ? confirmedCandleName : f_text_code(TXT_GENERAL_EVENT, code)
++
++int unifiedEventDirection = f_general_event_direction(generalEventCode)
++string unifiedEventText = f_general_event_text(generalEventCode)
+ int unifiedEventBar = generalEventCode == 13 ? doubleBottomPatternBar : generalEventCode == 14 ? doubleTopPatternBar : generalEventCode == 15 or generalEventCode == 16 ? bar_index - 1 : generalEventCode == 0 and (bullishRsiDivergence or bearishRsiDivergence) ? bar_index - pivotBars : bar_index
+ float unifiedEventLevel = generalEventCode == 25 ? ihsNecklineNow : generalEventCode == 26 ? hsNecklineNow : generalEventCode == 2 ? close : generalEventCode == 3 or generalEventCode == 4 or generalEventCode == 17 or generalEventCode == 18 ? resolvedBreakEventLevel : generalEventCode == 5 or generalEventCode == 6 ? wyckoffTestLevel : generalEventCode == 7 ? lastSwingLow : generalEventCode == 8 ? lastSwingHigh : generalEventCode == 9 or generalEventCode == 10 ? effectiveChannelFakeoutLevel : generalEventCode == 11 ? demandZoneHigh : generalEventCode == 12 ? supplyZoneLow : generalEventCode == 13 ? doubleBottomPatternLevel : generalEventCode == 14 ? doubleTopPatternLevel : generalEventCode == 19 or generalEventCode == 21 ? lastSwingHigh : generalEventCode == 20 or generalEventCode == 22 ? lastSwingLow : generalEventCode == 15 ? low[1] : generalEventCode == 16 ? high[1] : generalEventCode == 23 ? sidewaysRangeHigh : generalEventCode == 24 ? sidewaysRangeLow : generalEventCode == 0 and bullishRsiDivergence ? pivotLow : generalEventCode == 0 and bearishRsiDivergence ? pivotHigh : na
+ float unifiedEventAtr = generalEventCode == 15 or generalEventCode == 16 ? nz(safeAtr[1], safeAtr) : generalEventCode == 0 and (bullishRsiDivergence or bearishRsiDivergence) ? nz(safeAtr[pivotBars], safeAtr) : safeAtr
+-bool unifiedEventWarning = generalEventCode == 2 or generalEventCode == 3 or generalEventCode == 4 or generalEventCode == 7 or generalEventCode == 8 or generalEventCode == 9 or generalEventCode == 10
++bool unifiedEventWarning = generalEventCode >= 2 and generalEventCode <= 4 or generalEventCode >= 7 and generalEventCode <= 10
+ color unifiedEventColor = unifiedEventWarning ? warningColor : unifiedEventDirection == 1 ? bullColor : unifiedEventDirection == -1 ? bearColor : neutralColor
+-bool importantGeneralEvent = generalEventCode == 1 or generalEventCode == 3 or generalEventCode == 4 or generalEventCode == 5 or generalEventCode == 6 or generalEventCode == 7 or generalEventCode == 8 or generalEventCode == 9 or generalEventCode == 10 or generalEventCode == 13 or generalEventCode == 14 or generalEventCode == 15 or generalEventCode == 16 or generalEventCode == 19 or generalEventCode == 20 or generalEventCode == 21 or generalEventCode == 22 or generalEventCode == 23 or generalEventCode == 24 or generalEventCode == 25 or generalEventCode == 26
++bool importantGeneralEvent = generalEventCode == 1 or generalEventCode >= 3 and generalEventCode <= 10 or generalEventCode >= 13 and generalEventCode <= 16 or generalEventCode >= 19 and generalEventCode <= 26
+ bool unifiedEventMarkerEnabled = importantGeneralEvent and unifiedEventText != "" and (generalEventCode == 15 or generalEventCode == 16 ? showImportantCandleLabel : showEventLabel)
+ 
+ float patternFlatSlope = safeAtr * 0.03
+@@ -2903,8 +2935,8 @@
+     bool directVolumeEvidenceEnabled = useVolumeFilter and setupCandidateActive and setupCandidateState.directBreak and volumeAvailable
+     bool vsaEvidenceEnabled = useVsaAnalysis and volumeAvailable
+     int participationEvidenceMax = directVolumeEvidenceEnabled or vsaEvidenceEnabled ? 1 : 0
+-    int bullishParticipationEvidence = (directVolumeEvidenceEnabled and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher) and closeLocation >= 0.55) or (vsaEvidenceEnabled and vsaSignal == 1) ? 1 : 0
+-    int bearishParticipationEvidence = (directVolumeEvidenceEnabled and (relativeVolume >= volumeMultiple or heatmapVolumeMediumOrHigher) and closeLocation <= 0.45) or (vsaEvidenceEnabled and vsaSignal == -1) ? 1 : 0
++    int bullishParticipationEvidence = (directVolumeEvidenceEnabled and standardVolumeEffort and closeLocation >= 0.55) or (vsaEvidenceEnabled and vsaSignal == 1) ? 1 : 0
++    int bearishParticipationEvidence = (directVolumeEvidenceEnabled and standardVolumeEffort and closeLocation <= 0.45) or (vsaEvidenceEnabled and vsaSignal == -1) ? 1 : 0
+ 
+     // If the hard VWAP requirement is enabled, score against the very same entry
+     // reference. With the hard filter disabled, only an explicitly enabled and ready
+@@ -2952,12 +2984,12 @@
+     bool bearishApproachWatch = not na(bearishWatchLevel) and close - bearishWatchLevel <= formationProximity and low <= bearishWatchLevel + formationProximity
+     bool bullishRetestWatch = (watchAfterBreak and priorWatchedBreakDirection == 1 and low <= priorWatchedBreakLevel + retestTolerance * 1.5 and close >= priorWatchedBreakLevel - retestTolerance) or (demandZoneActive and low <= demandZoneHigh + retestTolerance and close >= demandZoneLow) or (bullishBreakerActive and low <= bullishBreakerHigh + retestTolerance and close >= bullishBreakerLow) or resistanceClusterActsAsSupport
+     bool bearishRetestWatch = (watchAfterBreak and priorWatchedBreakDirection == -1 and high >= priorWatchedBreakLevel - retestTolerance * 1.5 and close <= priorWatchedBreakLevel + retestTolerance) or (supplyZoneActive and high >= supplyZoneLow - retestTolerance and close <= supplyZoneHigh) or (bearishBreakerActive and high >= bearishBreakerLow - retestTolerance and close <= bearishBreakerHigh) or supportClusterActsAsResistance
+-    bool bullishFormationContext = bullishInsideBarSetup or (sidewaysRangeReady and precedingDownContext) or useCandleConfirmation and bullishReversalPatternRaw or inverseHeadShouldersReady or accumulationSpringEvent or bullishLiquiditySweep
+-    bool bearishFormationContext = bearishInsideBarSetup or (sidewaysRangeReady and precedingUpContext) or useCandleConfirmation and bearishReversalPatternRaw or headShouldersReady or distributionUtadEvent or bearishLiquiditySweep
++    bool bullishFormationContext = bullishInsideBarSetup or (sidewaysRangeReady and precedingDownContext) or useCandleConfirmation and bullishReversalPatternRaw or inverseHeadShouldersReady or accumulationSpringEvent or bullishSweep
++    bool bearishFormationContext = bearishInsideBarSetup or (sidewaysRangeReady and precedingUpContext) or useCandleConfirmation and bearishReversalPatternRaw or headShouldersReady or distributionUtadEvent or bearishSweep
+     bool bullishFormationRaw = stockChartAllowed and (bullishApproachWatch or bullishRetestWatch or bullishFormationContext) and bullishEvidencePercent >= formationEvidenceMinimum and bullishEvidence >= bearishEvidence
+     bool bearishFormationRaw = stockChartAllowed and (bearishApproachWatch or bearishRetestWatch or bearishFormationContext) and bearishEvidencePercent >= formationEvidenceMinimum and bearishEvidence >= bullishEvidence
+     formationDirection := bullishFormationRaw and not bearishFormationRaw ? 1 : bearishFormationRaw and not bullishFormationRaw ? -1 : 0
+-    formationSource := formationDirection == 1 ? (bullishRetestWatch ? "إعادة اختبار أو طلب" : inverseHeadShouldersReady ? "رأس وكتفين مقلوب" : bullishInsideBarSetup ? "انسايد بار" : sidewaysRangeReady and precedingDownContext ? "نطاق بعد هبوط" : useCandleConfirmation and bullishReversalPatternRaw ? "شمعة انعكاس صاعد" : accumulationSpringEvent or bullishLiquiditySweep ? "سحب سيولة" : "قرب اختراق") : formationDirection == -1 ? (bearishRetestWatch ? "إعادة اختبار أو عرض" : headShouldersReady ? "رأس وكتفين" : bearishInsideBarSetup ? "انسايد بار" : sidewaysRangeReady and precedingUpContext ? "نطاق بعد صعود" : useCandleConfirmation and bearishReversalPatternRaw ? "شمعة انعكاس هابط" : distributionUtadEvent or bearishLiquiditySweep ? "سحب سيولة" : "قرب كسر") : "لا مراقبة"
++    formationSource := formationDirection == 1 ? (bullishRetestWatch ? "إعادة اختبار أو طلب" : inverseHeadShouldersReady ? "رأس وكتفين مقلوب" : bullishInsideBarSetup ? "انسايد بار" : sidewaysRangeReady and precedingDownContext ? "نطاق بعد هبوط" : useCandleConfirmation and bullishReversalPatternRaw ? "شمعة انعكاس صاعد" : accumulationSpringEvent or bullishSweep ? "سحب سيولة" : "قرب اختراق") : formationDirection == -1 ? (bearishRetestWatch ? "إعادة اختبار أو عرض" : headShouldersReady ? "رأس وكتفين" : bearishInsideBarSetup ? "انسايد بار" : sidewaysRangeReady and precedingUpContext ? "نطاق بعد صعود" : useCandleConfirmation and bearishReversalPatternRaw ? "شمعة انعكاس هابط" : distributionUtadEvent or bearishSweep ? "سحب سيولة" : "قرب كسر") : "لا مراقبة"
+ 
+     [formationDirection, formationSource]
+ 
+@@ -3139,9 +3171,7 @@
+             f_close_plan_line(target2Line, bar_index, #22C55E, 82, 1)
+         if not target3Done
+             f_close_plan_line(target3Line, bar_index, #22C55E, 82, 1)
+-        if not na(planBox)
+-            label.delete(planBox)
+-            planBox := na
++        planBox := f_clear_label(planBox)
+     else if planInvalidatedByClose or planBreakFailedNow
+         planActive := false
+         planState := planInvalidatedByClose ? "إلغاء: تجاوز الإبطال" : "إلغاء: كسر وهمي"
+@@ -3155,9 +3185,7 @@
+         f_close_plan_line(target1Line, bar_index, #22C55E, 84, 1)
+         f_close_plan_line(target2Line, bar_index, #22C55E, 84, 1)
+         f_close_plan_line(target3Line, bar_index, #22C55E, 84, 1)
+-        if not na(planBox)
+-            label.delete(planBox)
+-            planBox := na
++        planBox := f_clear_label(planBox)
+     else if target3Touched and not target3Done
+         if not target1Done
+             target1HitBar := bar_index
+@@ -3176,18 +3204,10 @@
+         planOutcomePrice := planTarget3
+         f_close_plan_line(entryLine, bar_index, planDirection == 1 ? confirmedLongEntryColor : confirmedShortEntryColor, 62, 1)
+         f_close_plan_line(stopLine, bar_index, #F23645, 78, 1)
+-        if not na(target1Line)
+-            line.delete(target1Line)
+-            target1Line := na
+-        if not na(target2Line)
+-            line.delete(target2Line)
+-            target2Line := na
+-        if not na(target3Line)
+-            line.delete(target3Line)
+-            target3Line := na
+-        if not na(planBox)
+-            label.delete(planBox)
+-            planBox := na
++        target1Line := f_clear_line(target1Line)
++        target2Line := f_clear_line(target2Line)
++        target3Line := f_clear_line(target3Line)
++        planBox := f_clear_label(planBox)
+     else if target2Touched and not target2Done
+         if not target1Done
+             target1HitBar := bar_index
+@@ -3196,20 +3216,14 @@
+         target2Done := true
+         planState := "تحقق هدف 2"
+         lastPlanResult := planState
+-        if not na(target1Line)
+-            line.delete(target1Line)
+-            target1Line := na
+-        if not na(target2Line)
+-            line.delete(target2Line)
+-            target2Line := na
++        target1Line := f_clear_line(target1Line)
++        target2Line := f_clear_line(target2Line)
+     else if target1Touched and not target1Done
+         target1Done := true
+         target1HitBar := bar_index
+         planState := "تحقق هدف 1"
+         lastPlanResult := planState
+-        if not na(target1Line)
+-            line.delete(target1Line)
+-            target1Line := na
++        target1Line := f_clear_line(target1Line)
+ 
+ // The stop used to evaluate this bar was fixed on the preceding execution.
+ // Only after the confirmed close do we calculate the next bar's protected
+@@ -3301,51 +3315,21 @@
+ // بعلامة نتيجة واحدة فقط. تتكرر الكتلة أثناء الشمعة الحية حتى تثبت الرسوم بعد الإغلاق.
+ bool planEndedThisBar = not planActive and not na(planOutcomeBar) and planOutcomeBar == bar_index
+ if planEndedThisBar
+-    if not na(entryLine)
+-        line.delete(entryLine)
+-        entryLine := na
+-    if not na(stopLine)
+-        line.delete(stopLine)
+-        stopLine := na
+-    if not na(target1Line)
+-        line.delete(target1Line)
+-        target1Line := na
+-    if not na(target2Line)
+-        line.delete(target2Line)
+-        target2Line := na
+-    if not na(target3Line)
+-        line.delete(target3Line)
+-        target3Line := na
+-    if not na(planBox)
+-        label.delete(planBox)
+-        planBox := na
+-    if not na(entryLevelLabel)
+-        label.delete(entryLevelLabel)
+-        entryLevelLabel := na
+-    if not na(stopLevelLabel)
+-        label.delete(stopLevelLabel)
+-        stopLevelLabel := na
+-    if not na(target1LevelLabel)
+-        label.delete(target1LevelLabel)
+-        target1LevelLabel := na
+-    if not na(target2LevelLabel)
+-        label.delete(target2LevelLabel)
+-        target2LevelLabel := na
+-    if not na(target3LevelLabel)
+-        label.delete(target3LevelLabel)
+-        target3LevelLabel := na
+-    if not na(activePlanEntryMarker)
+-        label.delete(activePlanEntryMarker)
+-        activePlanEntryMarker := na
+-    if not na(activePlanTarget1Marker)
+-        label.delete(activePlanTarget1Marker)
+-        activePlanTarget1Marker := na
+-    if not na(activePlanTarget2Marker)
+-        label.delete(activePlanTarget2Marker)
+-        activePlanTarget2Marker := na
+-    if not na(activePlanTarget3Marker)
+-        label.delete(activePlanTarget3Marker)
+-        activePlanTarget3Marker := na
++    entryLine := f_clear_line(entryLine)
++    stopLine := f_clear_line(stopLine)
++    target1Line := f_clear_line(target1Line)
++    target2Line := f_clear_line(target2Line)
++    target3Line := f_clear_line(target3Line)
++    planBox := f_clear_label(planBox)
++    entryLevelLabel := f_clear_label(entryLevelLabel)
++    stopLevelLabel := f_clear_label(stopLevelLabel)
++    target1LevelLabel := f_clear_label(target1LevelLabel)
++    target2LevelLabel := f_clear_label(target2LevelLabel)
++    target3LevelLabel := f_clear_label(target3LevelLabel)
++    activePlanEntryMarker := f_clear_label(activePlanEntryMarker)
++    activePlanTarget1Marker := f_clear_label(activePlanTarget1Marker)
++    activePlanTarget2Marker := f_clear_label(activePlanTarget2Marker)
++    activePlanTarget3Marker := f_clear_label(activePlanTarget3Marker)
+     planHighSinceEntry := na
+     planLowSinceEntry := na
+ bool planCooldownComplete = na(lastPlanExitBar) or bar_index - lastPlanExitBar > planReentryCooldownBars
+@@ -3528,46 +3512,21 @@
+         // هذه هي شمعة القرار الفعلية: لا تظهر العلامة إلا بعد إغلاق الشمعة
+         // واكتمال الإعداد والأدلة وإدارة المخاطرة، لا لمجرد اقتراب السعر.
+ 
+-        if not na(entryLine)
+-            line.delete(entryLine)
+-        if not na(stopLine)
+-            line.delete(stopLine)
+-        if not na(target1Line)
+-            line.delete(target1Line)
+-        if not na(target2Line)
+-            line.delete(target2Line)
+-        if not na(target3Line)
+-            line.delete(target3Line)
+-        if not na(planBox)
+-            label.delete(planBox)
+-            planBox := na
+-        if not na(entryLevelLabel)
+-            label.delete(entryLevelLabel)
+-            entryLevelLabel := na
+-        if not na(stopLevelLabel)
+-            label.delete(stopLevelLabel)
+-            stopLevelLabel := na
+-        if not na(target1LevelLabel)
+-            label.delete(target1LevelLabel)
+-            target1LevelLabel := na
+-        if not na(target2LevelLabel)
+-            label.delete(target2LevelLabel)
+-            target2LevelLabel := na
+-        if not na(target3LevelLabel)
+-            label.delete(target3LevelLabel)
+-            target3LevelLabel := na
+-        if not na(activePlanEntryMarker)
+-            label.delete(activePlanEntryMarker)
+-            activePlanEntryMarker := na
+-        if not na(activePlanTarget1Marker)
+-            label.delete(activePlanTarget1Marker)
+-            activePlanTarget1Marker := na
+-        if not na(activePlanTarget2Marker)
+-            label.delete(activePlanTarget2Marker)
+-            activePlanTarget2Marker := na
+-        if not na(activePlanTarget3Marker)
+-            label.delete(activePlanTarget3Marker)
+-            activePlanTarget3Marker := na
++        entryLine := f_clear_line(entryLine)
++        stopLine := f_clear_line(stopLine)
++        target1Line := f_clear_line(target1Line)
++        target2Line := f_clear_line(target2Line)
++        target3Line := f_clear_line(target3Line)
++        planBox := f_clear_label(planBox)
++        entryLevelLabel := f_clear_label(entryLevelLabel)
++        stopLevelLabel := f_clear_label(stopLevelLabel)
++        target1LevelLabel := f_clear_label(target1LevelLabel)
++        target2LevelLabel := f_clear_label(target2LevelLabel)
++        target3LevelLabel := f_clear_label(target3LevelLabel)
++        activePlanEntryMarker := f_clear_label(activePlanEntryMarker)
++        activePlanTarget1Marker := f_clear_label(activePlanTarget1Marker)
++        activePlanTarget2Marker := f_clear_label(activePlanTarget2Marker)
++        activePlanTarget3Marker := f_clear_label(activePlanTarget3Marker)
+         color directionColor = isLong ? bullColor : bearColor
+         // One fixed visual language for both rising and falling plans:
+         // cyan entry, red stop, and dotted green targets.
+@@ -3660,17 +3619,13 @@
+ bool watchStageMarker = chartSignalDisplayAllowed and formationDirection != 0 and not setupCandidateActive and not planActive and (showHistoricalOpportunityMarkers ? formationDirection != nz(formationDirection[1], 0) : barstate.islast)
+ bool candidateStageMarker = chartSignalDisplayAllowed and setupCandidateActive and not planActive and (showHistoricalOpportunityMarkers ? (not setupCandidateActive[1] or setupCandidateDirection != nz(setupCandidateDirection[1], 0)) : barstate.islast)
+ if showHistoricalOpportunityMarkers
+-    if not na(activeStageLabel)
+-        label.delete(activeStageLabel)
+-        activeStageLabel := na
++    activeStageLabel := f_clear_label(activeStageLabel)
+     if watchStageMarker
+         f_push_chart_marker(chartEventLabels, maximumUnifiedChartLabels, bar_index, formationDirection == 1 ? low : high, "راقب", formationDirection == 1, formationDirection == 1 ? bullColor : bearColor, safeAtr, 0.30, 0.18)
+     else if candidateStageMarker
+         f_push_chart_marker(chartEventLabels, maximumUnifiedChartLabels, bar_index, setupCandidateDirection == 1 ? low : high, "مرشح", setupCandidateDirection == 1, setupCandidateDirection == 1 ? bullColor : bearColor, safeAtr, 0.38, 0.18)
+ else if barstate.islast
+-    if not na(activeStageLabel)
+-        label.delete(activeStageLabel)
+-        activeStageLabel := na
++    activeStageLabel := f_clear_label(activeStageLabel)
+     if watchStageMarker
+         activeStageLabel := f_new_chart_marker(bar_index, formationDirection == 1 ? low : high, "راقب", formationDirection == 1, formationDirection == 1 ? bullColor : bearColor, safeAtr, 0.30)
+     else if candidateStageMarker
+@@ -3682,21 +3637,17 @@
+ 
+ if stockChartAllowed
+     if newPlanCreatedEvent
+-        if not na(activePlanEntryMarker)
+-            label.delete(activePlanEntryMarker)
++        activePlanEntryMarker := f_clear_label(activePlanEntryMarker)
+         activePlanEntryMarker := f_new_chart_marker(bar_index, planDirection == 1 ? low : high, planDirection == 1 ? "شراء" : "بيع", planDirection == 1, planDirection == 1 ? confirmedLongEntryColor : confirmedShortEntryColor, safeAtr, 0.25)
+     if planActive
+         if target1Done and target1HitBar == bar_index
+-            if not na(activePlanTarget1Marker)
+-                label.delete(activePlanTarget1Marker)
++            activePlanTarget1Marker := f_clear_label(activePlanTarget1Marker)
+             activePlanTarget1Marker := f_new_chart_marker(bar_index, planTarget1, "هدف 1", planDirection == -1, #22C55E, safeAtr, 0.34)
+         if target2Done and target2HitBar == bar_index
+-            if not na(activePlanTarget2Marker)
+-                label.delete(activePlanTarget2Marker)
++            activePlanTarget2Marker := f_clear_label(activePlanTarget2Marker)
+             activePlanTarget2Marker := f_new_chart_marker(bar_index, planTarget2, "هدف 2", planDirection == -1, #22C55E, safeAtr, 0.34)
+         if target3Done and target3HitBar == bar_index
+-            if not na(activePlanTarget3Marker)
+-                label.delete(activePlanTarget3Marker)
++            activePlanTarget3Marker := f_clear_label(activePlanTarget3Marker)
+             activePlanTarget3Marker := f_new_chart_marker(bar_index, planTarget3, "هدف 3", planDirection == -1, #22C55E, safeAtr, 0.34)
+ 
+ var table dashboard = table.new(position.top_right, 2, 8, bgcolor = color.new(#111827, 12), frame_color = color.new(neutralColor, 45), frame_width = 1, border_color = color.new(neutralColor, 78), border_width = 1)
+@@ -3711,7 +3662,7 @@
+             int displayedAdaptiveBias = barstate.isconfirmed ? adaptiveTrendBias : adaptiveTrendBias[1]
+             float displayedVolumeZ = barstate.isconfirmed ? volumeZScore : volumeZScore[1]
+             int displayedHeatmapTier = barstate.isconfirmed ? heatmapVolumeTier : heatmapVolumeTier[1]
+-            string displayedHeatmapText = displayedHeatmapTier == 5 ? "فائق" : displayedHeatmapTier == 4 ? "مرتفع" : displayedHeatmapTier == 3 ? "متوسط" : displayedHeatmapTier == 2 ? "طبيعي" : displayedHeatmapTier == 1 ? "منخفض" : "—"
++            string displayedHeatmapText = f_text_code(TXT_HEATMAP_TIER, displayedHeatmapTier)
+             string currentBias = closedStructureBias == 1 ? "صاعد" : closedStructureBias == -1 ? "هابط" : "تحول"
+             string higherBias = closedHigherTrendBias == 1 ? "صاعد" : closedHigherTrendBias == -1 ? "هابط" : "تحول"
+             string warningText = showContextWarningLabel ? closedStructureConflict ? "\nتعارض هيكلي" : closedStructureBias != 0 and closedHigherTrendBias != 0 and closedStructureBias != closedHigherTrendBias ? "\nاختلاف إطار أعلى" : "" : ""
+@@ -3725,7 +3676,7 @@
+             string riskText = planActive ? "دخول " + f_price(planEntry) + " | وقف " + f_price(planStop) + "\nهدف 1 " + f_price(planTarget1) + (target1Done ? " ✓" : "") + " | هدف 2 " + f_price(planTarget2) + (target2Done ? " ✓" : "") + "\nهدف 3 " + f_price(planTarget3) + (target3Done ? " ✓" : "") : "لا خطة"
+             color structureColor = closedStructureConflict ? warningColor : closedStructureBias == 1 ? bullColor : closedStructureBias == -1 ? bearColor : neutralColor
+             color planColor = planActive ? (planDirection == 1 ? bullColor : bearColor) : setupCandidateActive ? (setupCandidateDirection == 1 ? bullColor : bearColor) : formationDirection == 1 ? bullColor : formationDirection == -1 ? bearColor : neutralColor
+-            table.cell(dashboard, 0, 0, "ملخص التحليل SC-V71-D", text_color = color.white, bgcolor = color.new(neutralColor, 35), text_size = 8, text_halign = text.align_center)
++            table.cell(dashboard, 0, 0, "ملخص التحليل SC-V72-D", text_color = color.white, bgcolor = color.new(neutralColor, 35), text_size = 8, text_halign = text.align_center)
+             array<string> labels = array.from("الاتجاه", "التوافق", "وايكوف", "الفني", "السياق", "الخطة", "الإدارة")
+             array<string> values = array.from(directionText, evidenceText, wyckoffText, technicalText, contextText, planText, riskText)
+             array<color> colors = array.from(structureColor, color.white, color.white, color.white, neutralColor, planColor, planColor)
